@@ -64,6 +64,7 @@
   .msg.user .msg-bubble { background: #252840; color: #B8E0DC; border-radius: 12px 4px 12px 12px; }
   .correction { color: #FFB347; }
   .typing { color: #5A6080; font-style: italic; font-size: 13px; padding: 8px 0; }
+  .error-msg { color: #FF6B6B; font-size: 13px; padding: 8px 12px; background: #1A1020; border: 1px solid #3A1020; border-radius: 8px; }
 
   #bottom { background: #1A1D2E; padding: 14px 20px; border-top: 1px solid #252840; display: flex; gap: 10px; align-items: flex-end; }
   #input { flex: 1; background: #252840; border: 1px solid #3A3D52; color: #E8EAF6; padding: 10px 14px; border-radius: 8px; font-size: 14px; font-family: Georgia, serif; resize: none; min-height: 44px; max-height: 120px; outline: none; }
@@ -76,14 +77,12 @@
 </head>
 <body>
 
-<!-- SIDEBAR -->
 <div id="sidebar">
   <div id="sidebar-header"><span>💬 История чатов</span></div>
   <button id="new-chat-btn" onclick="newChat()">✏️ Новый чат</button>
   <div id="chat-list"></div>
 </div>
 
-<!-- MAIN -->
 <div id="main">
   <div id="header">
     <button id="toggle-sidebar" onclick="toggleSidebar()">☰</button>
@@ -103,7 +102,7 @@
 </div>
 
 <script>
-// !! ВСТАВЬТЕ ВАШ GROQ КЛЮЧ СЮДА ↓↓↓
+// ВАШ GROQ КЛЮЧ:
 const API_KEY = "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";
 
 let history = [], thinking = false, currentChatId = null, sidebarOpen = true;
@@ -121,11 +120,10 @@ YOUR ROLE:
 
 Start by greeting the student warmly and asking about their English level.`;
 
-// ── STORAGE ──────────────────────────────────────────────
 function getChats() { try { return JSON.parse(localStorage.getItem("teachbek_chats") || "{}"); } catch { return {}; } }
-function saveChats(c) { localStorage.setItem("teachbek_chats", JSON.stringify(c)); }
+function saveChats(c) { try { localStorage.setItem("teachbek_chats", JSON.stringify(c)); } catch(e) {} }
 function getChatMeta() { try { return JSON.parse(localStorage.getItem("teachbek_meta") || "[]"); } catch { return []; } }
-function saveChatMeta(m) { localStorage.setItem("teachbek_meta", JSON.stringify(m)); }
+function saveChatMeta(m) { try { localStorage.setItem("teachbek_meta", JSON.stringify(m)); } catch(e) {} }
 function generateId() { return "chat_" + Date.now() + "_" + Math.random().toString(36).slice(2,7); }
 
 function formatDate(ts) {
@@ -136,74 +134,71 @@ function formatDate(ts) {
   if (d < 604800000) return Math.floor(d/86400000) + " дн назад";
   return new Date(ts).toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
 }
-function esc(s) { return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+function esc(s) { return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
 
-// ── SIDEBAR ───────────────────────────────────────────────
 function renderSidebar() {
-  const meta = getChatMeta(), list = document.getElementById("chat-list");
-  list.innerHTML = "";
-  if (!meta.length) {
-    list.innerHTML = `<div class="empty-sidebar">Нет сохранённых чатов.<br>Начните новый чат!</div>`;
-    return;
-  }
-  const now = Date.now(), today = [], week = [], older = [];
-  [...meta].sort((a,b) => b.updatedAt - a.updatedAt).forEach(m => {
-    const d = now - m.updatedAt;
-    if (d < 86400000) today.push(m); else if (d < 604800000) week.push(m); else older.push(m);
-  });
-  function grp(label, items) {
-    if (!items.length) return;
-    const l = document.createElement("div");
-    l.className = "sidebar-section-label"; l.textContent = label; list.appendChild(l);
-    items.forEach(m => {
-      const div = document.createElement("div");
-      div.className = "chat-item" + (m.id === currentChatId ? " active" : "");
-      div.innerHTML = `
-        <div class="chat-item-info">
-          <div class="chat-item-title">${esc(m.title)}</div>
-          <div class="chat-item-date">${formatDate(m.updatedAt)}</div>
-        </div>
-        <button class="chat-item-del" onclick="deleteChat(event,'${m.id}')">✕</button>`;
-      div.addEventListener("click", e => { if (!e.target.classList.contains("chat-item-del")) loadChat(m.id); });
-      list.appendChild(div);
+  try {
+    const meta = getChatMeta(), list = document.getElementById("chat-list");
+    list.innerHTML = "";
+    if (!meta.length) { list.innerHTML = `<div class="empty-sidebar">Нет сохранённых чатов.<br>Начните новый чат!</div>`; return; }
+    const now = Date.now(), today = [], week = [], older = [];
+    [...meta].sort((a,b) => b.updatedAt - a.updatedAt).forEach(m => {
+      const d = now - m.updatedAt;
+      if (d < 86400000) today.push(m); else if (d < 604800000) week.push(m); else older.push(m);
     });
-  }
-  grp("Сегодня", today); grp("На этой неделе", week); grp("Раньше", older);
+    function grp(label, items) {
+      if (!items.length) return;
+      const l = document.createElement("div"); l.className = "sidebar-section-label"; l.textContent = label; list.appendChild(l);
+      items.forEach(m => {
+        const div = document.createElement("div");
+        div.className = "chat-item" + (m.id === currentChatId ? " active" : "");
+        div.innerHTML = `<div class="chat-item-info"><div class="chat-item-title">${esc(m.title)}</div><div class="chat-item-date">${formatDate(m.updatedAt)}</div></div><button class="chat-item-del" onclick="deleteChat(event,'${m.id}')">✕</button>`;
+        div.addEventListener("click", e => { if (!e.target.classList.contains("chat-item-del")) loadChat(m.id); });
+        list.appendChild(div);
+      });
+    }
+    grp("Сегодня", today); grp("На этой неделе", week); grp("Раньше", older);
+  } catch(e) { console.error("renderSidebar error:", e); }
 }
 
-// ── CHAT MANAGEMENT ───────────────────────────────────────
 function newChat() {
-  saveCurrent();
-  currentChatId = generateId(); history = [];
-  document.getElementById("chat").innerHTML = "";
-  document.getElementById("chat-title-display").textContent = "";
-  renderSidebar(); getReply();
+  try {
+    saveCurrent();
+    currentChatId = generateId(); history = [];
+    document.getElementById("chat").innerHTML = "";
+    document.getElementById("chat-title-display").textContent = "";
+    renderSidebar(); getReply();
+  } catch(e) { console.error("newChat error:", e); }
 }
 
 function loadChat(id) {
-  saveCurrent();
-  const chats = getChats(); if (!chats[id]) return;
-  currentChatId = id; history = chats[id].history || [];
-  const chat = document.getElementById("chat"); chat.innerHTML = "";
-  (chats[id].messages || []).forEach(m => addMessage(m.role, m.text, false));
-  const meta = getChatMeta().find(m => m.id === id);
-  document.getElementById("chat-title-display").textContent = meta ? meta.title : "";
-  renderSidebar(); chat.scrollTop = chat.scrollHeight;
+  try {
+    saveCurrent();
+    const chats = getChats(); if (!chats[id]) return;
+    currentChatId = id; history = chats[id].history || [];
+    const chat = document.getElementById("chat"); chat.innerHTML = "";
+    (chats[id].messages || []).forEach(m => addMessage(m.role, m.text, false));
+    const meta = getChatMeta().find(m => m.id === id);
+    document.getElementById("chat-title-display").textContent = meta ? meta.title : "";
+    renderSidebar(); chat.scrollTop = chat.scrollHeight;
+  } catch(e) { console.error("loadChat error:", e); }
 }
 
 function saveCurrent() {
-  if (!currentChatId || history.length === 0) return;
-  const messages = [];
-  document.querySelectorAll("#chat .msg").forEach(el => {
-    const role = el.classList.contains("professor") ? "professor" : "user";
-    const text = Array.from(el.querySelectorAll(".msg-bubble span")).map(s => s.textContent).join("").replace(/\n$/, "");
-    messages.push({ role, text });
-  });
-  const chats = getChats(); chats[currentChatId] = { history, messages }; saveChats(chats);
-  let meta = getChatMeta(); const ex = meta.find(m => m.id === currentChatId); const title = deriveTitle();
-  if (ex) { ex.title = title; ex.updatedAt = Date.now(); }
-  else meta.push({ id: currentChatId, title, updatedAt: Date.now(), createdAt: Date.now() });
-  saveChatMeta(meta);
+  try {
+    if (!currentChatId || history.length === 0) return;
+    const messages = [];
+    document.querySelectorAll("#chat .msg").forEach(el => {
+      const role = el.classList.contains("professor") ? "professor" : "user";
+      const text = Array.from(el.querySelectorAll(".msg-bubble span")).map(s => s.textContent).join("").replace(/\n$/, "");
+      messages.push({ role, text });
+    });
+    const chats = getChats(); chats[currentChatId] = { history, messages }; saveChats(chats);
+    let meta = getChatMeta(); const ex = meta.find(m => m.id === currentChatId); const title = deriveTitle();
+    if (ex) { ex.title = title; ex.updatedAt = Date.now(); }
+    else meta.push({ id: currentChatId, title, updatedAt: Date.now(), createdAt: Date.now() });
+    saveChatMeta(meta);
+  } catch(e) { console.error("saveCurrent error:", e); }
 }
 
 function deriveTitle() {
@@ -231,24 +226,25 @@ function toggleSidebar() {
   document.getElementById("sidebar").classList.toggle("collapsed", !sidebarOpen);
 }
 
-// ── UI ────────────────────────────────────────────────────
 function handleKey(e) { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }
 function autoResize(el) { el.style.height = "auto"; el.style.height = Math.min(el.scrollHeight,120)+"px"; }
 
 function addMessage(role, text, save = true) {
-  const chat = document.getElementById("chat");
-  const div = document.createElement("div"); div.className = "msg " + role;
-  const label = document.createElement("div"); label.className = "msg-label";
-  label.textContent = role === "professor" ? "🎓 TeachBek" : "👤 You";
-  const bubble = document.createElement("div"); bubble.className = "msg-bubble";
-  text.split("\n").forEach(line => {
-    const span = document.createElement("span");
-    if (line.trim().startsWith("✏️")) span.className = "correction";
-    span.textContent = line + "\n"; bubble.appendChild(span);
-  });
-  div.appendChild(label); div.appendChild(bubble); chat.appendChild(div);
-  chat.scrollTop = chat.scrollHeight;
-  if (save) saveCurrent();
+  try {
+    const chat = document.getElementById("chat");
+    const div = document.createElement("div"); div.className = "msg " + role;
+    const label = document.createElement("div"); label.className = "msg-label";
+    label.textContent = role === "professor" ? "🎓 TeachBek" : "👤 You";
+    const bubble = document.createElement("div"); bubble.className = "msg-bubble";
+    text.split("\n").forEach(line => {
+      const span = document.createElement("span");
+      if (line.trim().startsWith("✏️")) span.className = "correction";
+      span.textContent = line + "\n"; bubble.appendChild(span);
+    });
+    div.appendChild(label); div.appendChild(bubble); chat.appendChild(div);
+    chat.scrollTop = chat.scrollHeight;
+    if (save) saveCurrent();
+  } catch(e) { console.error("addMessage error:", e); }
 }
 
 function showTyping() {
@@ -292,20 +288,31 @@ async function getReply() {
     document.getElementById("chat-title-display").textContent = t === "Новый чат" ? "" : t;
   } catch(e) {
     removeTyping();
-    addMessage("professor", "⚠️ Ошибка: " + e.message);
+    const chat = document.getElementById("chat");
+    const div = document.createElement("div");
+    div.className = "error-msg";
+    div.textContent = "⚠️ Ошибка: " + e.message + " — проверьте API ключ на console.groq.com/keys";
+    chat.appendChild(div);
+    chat.scrollTop = chat.scrollHeight;
   }
   thinking = false;
   document.getElementById("sendbtn").disabled = false;
   document.getElementById("input").focus();
 }
 
-// ── INIT ──────────────────────────────────────────────────
-window.onload = () => {
-  const meta = getChatMeta();
-  if (meta.length > 0) {
-    loadChat([...meta].sort((a,b) => b.updatedAt - a.updatedAt)[0].id);
-  } else {
-    newChat();
+window.onload = function() {
+  try {
+    const meta = getChatMeta();
+    if (meta.length > 0) {
+      loadChat([...meta].sort((a,b) => b.updatedAt - a.updatedAt)[0].id);
+    } else {
+      newChat();
+    }
+  } catch(e) {
+    console.error("onload error:", e);
+    // Даже если что-то сломалось — показываем интерфейс
+    currentChatId = generateId();
+    renderSidebar();
   }
 };
 </script>
